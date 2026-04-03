@@ -1,6 +1,6 @@
 [package]
 name = "cmeans-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["kostas passadis <kpassadis@gmail.com>"]
 description = "A high-performance Rust crate for soft clustering and subspace clustering algorithms (Fuzzy C-Means, Subspace K-Means)."
