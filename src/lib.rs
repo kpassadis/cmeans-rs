@@ -1,5 +1,6 @@
 use faer::{Mat, RowRef, unzip, zip};
 use rand::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     thread::{self, ScopedJoinHandle},
@@ -7,22 +8,26 @@ use std::{
 
 pub mod metrics;
 pub mod preprocessing;
+pub mod serialization;
 pub mod subspace;
 pub mod utils;
 
 use crate::metrics::ClusterMetrics;
+use crate::serialization::mat_serde;
 
 /// Represents a single fuzzy cluster within the Fuzzy C-Means model.
 ///
 /// A cluster maintains its centroid and a membership matrix that tracks
 /// how strongly each data point in the training set belongs to it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Cluster {
-    /// The cluster center. A matrix of dimensions `[1 x p]`, where `p` is 
+    /// The cluster center. A matrix of dimensions `[1 x p]` (a row vector), where `p` is
     /// the dimensionality of the input space.
+    #[serde(with = "mat_serde")]
     v: Mat<f64>,
     /// The membership column-vector. Dimensions `[n x 1]`, where `n` is the number of data points.
     /// Each value represents the degree of membership of the corresponding point to this cluster.
+    #[serde(with = "mat_serde")]
     mu: Mat<f64>,
     /// The fuzzifier hyperparameter `m`. Controls the "fuzziness" of the cluster assignments.
     m: f64,
@@ -143,8 +148,10 @@ impl Cluster {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct FuzzyMeans {
     clusters: Vec<Cluster>,
+    #[serde(with = "mat_serde")]
     g: Mat<f64>,
     history: Vec<f64>,
 }
@@ -152,8 +159,8 @@ pub struct FuzzyMeans {
 impl FuzzyMeans {
     /// Calculates `G`, a matrix of dimensions `[1 x p]`.
     ///
-    /// This represents the inverse variance of each feature. It acts as the diagonal of a 
-    /// Mahalanobis-style covariance matrix, standardizing the distance calculation across 
+    /// This represents the inverse variance of each feature. It acts as the diagonal of a
+    /// Mahalanobis-style covariance matrix, standardizing the distance calculation across
     /// features of different scales.
     fn g(x: &Mat<f64>) -> Mat<f64> {
         let n = x.nrows();
@@ -231,6 +238,56 @@ impl FuzzyMeans {
     pub fn predict_hard(&self, x: &Mat<f64>) -> Vec<usize> {
         let memberships = self.predict_memberships(x);
         utils::which(&memberships, utils::Axis::Horizontal, utils::Cmp::Max)
+    }
+
+    /// Given some input matrix and a cluster index the function returns the indices of the
+    /// rows of the matrix that belong to the particular cluster center.
+    ///
+    /// # Arguments
+    /// - `x`: the input matrix of shape [n x p]
+    /// - `cluster_idx`: The index of the cluster
+    pub fn get_members(&self, x: &Mat<f64>, cluster_idx: usize) -> Vec<usize> {
+        assert!(cluster_idx > 0 && cluster_idx < self.clusters.len());
+        let preds = self.predict_hard(x);
+
+        preds
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, c)| if c == cluster_idx { Some(i) } else { None })
+            .collect()
+    }
+
+    /// Calculate the cluster variance.
+    ///
+    pub fn cluster_variance(&self, x: &Mat<f64>, cluster_idx: usize) -> f64 {
+        // usize is always >= 0, so only need to check for the upper bound
+        assert!(
+            cluster_idx < self.clusters.len(),
+            "Cluster index out of bounds"
+        );
+        let indexes = self.get_members(x, cluster_idx);
+
+        // If the cluster has no members then the variance is 0.0
+        if indexes.is_empty() {
+            return 0.0;
+        }
+
+        // Get the view of the specific cluster center once
+        let center = &self.clusters[cluster_idx].v;
+        let center_vec = center.as_ref().get_r(0);
+
+        // Zero-Allocation Optimization:
+        // We calculate the sum of squared distances on-the-fly without allocating
+        let sum_sq_dist: f64 = indexes
+            .iter()
+            .map(|&i| {
+                let row = x.as_ref().get_r(i);
+                utils::euclidean_distance_squared(row.iter(), center_vec.iter())
+            })
+            .sum();
+
+        // Variance is the mean of squared errors.
+        sum_sq_dist / indexes.len() as f64
     }
 
     /// Fits a Fuzzy C-Means model to the input data.
@@ -330,10 +387,19 @@ impl FuzzyMeans {
         &self.history
     }
 
+    /// Returns a all cluster centers collected into a grand matrix of dimensions
+    /// [C x p], where C is the number of clusters and p is the dimensionality of the
+    /// cluster centers. This allocates and returns a new matrix.
+    pub fn collect_clusters(&self) -> Mat<f64> {
+        let k = self.clusters.len();
+        let p = self.clusters[0].v.ncols();
+        Mat::from_fn(k, p, |i, j| self.clusters[i].v[(0, j)])
+    }
+
     /// Performs a parallelized random grid search to tune hyper-parameters `c` and `m`.
     ///
     /// Evaluates combinations of clusters `c` and fuzzifier `m` across a random subset of
-    /// configurations. This process is multithreaded using standard scoped threads to 
+    /// configurations. This process is multithreaded using standard scoped threads to
     /// ensure high performance. Models are evaluated based on their entropy coefficient.
     ///
     /// # Arguments
@@ -446,7 +512,7 @@ impl TuneResult {
 impl ClusterMetrics for FuzzyMeans {
     /// Computes the partition coefficient of the membership matrix.
     ///
-    /// Measures the amount of overlap between clusters. Values range from `1/c` (maximum fuzziness) 
+    /// Measures the amount of overlap between clusters. Values range from `1/c` (maximum fuzziness)
     /// to `1.0` (hard clustering).
     fn partition_coefficient(u: &Mat<f64>) -> f64 {
         let n = u.nrows() as f64;
@@ -536,5 +602,35 @@ mod tests {
             assert!(s.is_finite(), "row {i} sum not finite: {s}");
             assert!((s - 1.0).abs() < eps, "row {i} sum = {s}, expected ~1.0");
         }
+    }
+
+    #[test]
+    fn test_serialization() {
+        // The faer::mat! macro is perfect for writing readable unit tests
+        let x = mat![
+            [0.1, 0.1, 0.2],
+            [0.1, 0.2, 0.3],
+            [0.2, 0.2, 0.5],
+            [0.3, 0.2, 0.8],
+            [0.6, 0.7, 0.5],
+            [0.1, 0.3, 0.9],
+        ];
+
+        // Train the actual model
+        let fuzzy = FuzzyMeans::fit(2, 2.0, &x, 10, UpdateMethod::ImmediateCenterUpdate);
+
+        // Test Serialization
+        let json_string = serde_json::to_string_pretty(&fuzzy);
+        assert!(json_string.is_ok(), "Serialization failed");
+
+        let json_string = json_string.unwrap();
+        println!("✅ Serialized JSON:\n{}", json_string);
+
+        // Test Deserialization Round-Trip on the live model
+        let recovered_model: FuzzyMeans =
+            serde_json::from_str(&json_string).expect("Failed to deserialize JSON string");
+
+        // Guarantee no data was lost
+        assert_eq!(recovered_model.clusters.len(), fuzzy.clusters.len());
     }
 }

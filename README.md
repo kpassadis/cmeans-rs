@@ -48,9 +48,9 @@ And the equation to update the cluster centers is given by:
 ## Example Usage
 
 ```rust
-use cmeans_rs::preprocessing::StandardScaler;
-use cmeans_rs::subspace::SubspaceKMeans;
-use cmeans_rs::utils;
+use cmeans::preprocessing::StandardScaler;
+use cmeans::subspace::SubspaceKMeans;
+use cmeans::utils;
 
 fn main() {
     // 1. Load your data (implementation depends on your dataset)
@@ -69,3 +69,10 @@ fn main() {
     let weights = model.get_weights();
     println!("Feature weights for Cluster 0:\n{}", utils::print_membership_matrix(weights, 0));
 }
+
+```
+
+🚀 What's New in v0.2.0
+
+- Disk I/O & Serialization: Full serde support for seamlessly saving and loading trained models to and from disk.
+- Cluster Variance Metrics: Calculate cluster variance and standard deviations.

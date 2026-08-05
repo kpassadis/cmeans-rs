@@ -38,14 +38,10 @@ impl StandardScaler {
                 let mu = x_mean[i];
                 let total_dev: f64 = c.iter().map(|x| (x - mu).powi(2)).sum();
                 let sd = f64::sqrt(total_dev / (n - 1) as f64);
-                
+
                 // Safety check: Prevent division by zero for constant features.
                 // If variance is 0, we set the scale to 1.0 so the feature is merely centered.
-                if sd < eps {
-                    1.0
-                } else {
-                    sd
-                }
+                if sd < eps { 1.0 } else { sd }
             })
             .collect::<Vec<f64>>();
 
@@ -61,7 +57,7 @@ impl StandardScaler {
     /// A new matrix of shape `[n x p]` where each feature has zero mean and unit variance.
     pub fn transform(&self, x: &Mat<f64>) -> Mat<f64> {
         let (nrows, ncols) = x.shape();
-        
+
         // faer's from_fn is a very clean way to allocate and fill a matrix in one go
         Mat::from_fn(nrows, ncols, |i, j| {
             (x[(i, j)] - self.x_mean[j]) / self.x_sd[j]
@@ -84,17 +80,17 @@ impl StandardScaler {
     /// - `x_scaled`: A previously scaled data matrix.
     pub fn inverse_transform(&self, x_scaled: &Mat<f64>) -> Mat<f64> {
         let (nrows, ncols) = x_scaled.shape();
-        
+
         Mat::from_fn(nrows, ncols, |i, j| {
             x_scaled[(i, j)] * self.x_sd[j] + self.x_mean[j]
         })
     }
-    
+
     /// Returns the learned mean of each feature.
     pub fn mean(&self) -> &[f64] {
         &self.x_mean
     }
-    
+
     /// Returns the learned standard deviation of each feature.
     pub fn std(&self) -> &[f64] {
         &self.x_sd

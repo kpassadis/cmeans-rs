@@ -1,5 +1,44 @@
 use core::f64;
-use faer::Mat;
+use faer::{Mat, mat::Ref};
+
+use serde::{Serialize, de::DeserializeOwned};
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
+
+// Saves any serializable model or struct to a nicely formatted JSON file on disk.
+///
+/// Uses a `BufWriter` for high-performance I/O, which is crucial when saving
+/// models with large matrices.
+pub fn save_model_to_json<T: Serialize, P: AsRef<Path>>(
+    model: &T,
+    path: P,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+
+    // Using `to_writer_pretty` makes the JSON human-readable.
+    // If file size is a strict concern, switch to `serde_json::to_writer`
+    serde_json::to_writer_pretty(writer, model)?;
+
+    Ok(())
+}
+
+/// Loads a model or struct from a JSON file on disk.
+///
+/// The generic type `T` must implement `DeserializeOwned` to guarantee that
+/// the returned struct takes full ownership of its memory allocation, rather
+/// than trying to borrow from the file stream.
+pub fn load_model_from_json<T: DeserializeOwned, P: AsRef<Path>>(
+    path: P,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    let model = serde_json::from_reader(reader)?;
+
+    Ok(model)
+}
 
 #[macro_export]
 macro_rules! map {
@@ -167,13 +206,104 @@ pub fn print_membership_matrix(mat: &Mat<f64>, idx: usize) -> String {
     res.join("\n")
 }
 
+/// Calculates the squared Euclidean distance between two vectors of floats.
+/// Accepts anything that can iterate over `&f64` (Rows, Cols, Slices, Vecs).
+pub fn euclidean_distance_squared<'a, I>(x: I, y: I) -> f64
+where
+    I: IntoIterator<Item = &'a f64>,
+{
+    x.into_iter()
+        .zip(y.into_iter())
+        .fold(0.0, |acc, (a, b)| acc + (a - b).powi(2))
+}
+
+/// Calculates the distance between a vector and all rows or columns in a matrix.
+/// The function assumes that both matrices supplied are row oriented or column oriented.
+/// In either case it will return a column matrix.
+pub fn squared_distance_between(x: &Mat<f64>, y: &Mat<f64>, axis: Axis) -> Mat<f64> {
+    match axis {
+        Axis::Horizontal => {
+            let x_vec = x.as_ref().get_r(0);
+            Mat::from_fn(y.nrows(), 1, |i, _| {
+                euclidean_distance_squared(y.as_ref().get_r(i).iter(), x_vec.iter())
+            })
+        }
+        Axis::Vertical => {
+            let x_vec = x.as_ref().get_c(0);
+            Mat::from_fn(y.ncols(), 1, |i, _| {
+                euclidean_distance_squared(y.as_ref().get_c(i).iter(), x_vec.iter())
+            })
+        }
+    }
+}
+
+/// A utility function to calulate the distance matrix.
+/// The input is a matrix of vectors the distances of which we want to calculate and
+/// the axis indicates whether the vectors are stacked horizontally (one below the other) or vertically (one next to the other).
+/// The distance matrix returned is a rectangualr matrix
+pub fn distance_matrix(input: &Mat<f64>, axis: Axis) -> Mat<f64> {
+    match axis {
+        // Vectors stacked one below the other
+        Axis::Horizontal => {
+            let n = input.nrows();
+            let mut distance_matrix = Mat::<f64>::zeros(n, n);
+            for i in 0..n {
+                // Calculate only the lower triangle, the distance matrix is symmetric
+                for j in 0..i {
+                    let x = input.as_ref().get_r(i);
+                    let y = input.as_ref().get_r(j);
+                    let distance = euclidean_distance_squared(x.iter(), y.iter());
+                    distance_matrix[(i, j)] = distance.sqrt();
+                    distance_matrix[(j, i)] = distance.sqrt();
+                }
+            }
+            distance_matrix
+        }
+        // Vectors stacked one next to the other
+        Axis::Vertical => {
+            let n = input.ncols();
+            let mut distance_matrix = Mat::<f64>::zeros(n, n);
+            for i in 0..n {
+                for j in 0..i {
+                    let x = input.as_ref().get_c(i);
+                    let y = input.as_ref().get_c(j);
+                    let distance = euclidean_distance_squared(x.iter(), y.iter());
+                    distance_matrix[(i, j)] = distance.sqrt();
+                    distance_matrix[(j, i)] = distance.sqrt();
+                }
+            }
+            distance_matrix
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
+    use std::{assert_eq, println};
+
     use crate::utils::submat;
 
-    use super::{Axis, Cmp, sum, which};
+    use super::{Axis, Cmp, distance_matrix, sum, which};
     use faer::mat;
+
+    #[test]
+    fn test_distance_matrix() {
+        let x = mat![
+            [0.1, 0.15, 0.2],
+            [0.1, 0.2, 0.3],
+            [0.2, 0.21, 0.5],
+            [0.3, 0.2, 0.8],
+            [0.6, 0.7, 0.5],
+            [0.1, 0.3, 0.9],
+        ];
+
+        let dist_mat = distance_matrix(&x, Axis::Horizontal);
+        assert_eq!(dist_mat.nrows(), 6);
+        let dist_mat = distance_matrix(&x, Axis::Vertical);
+        assert_eq!(dist_mat.nrows(), 3);
+        println!("{:?}", &dist_mat);
+    }
 
     #[test]
     fn test_which_horizontal_min() {

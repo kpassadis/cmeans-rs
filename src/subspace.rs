@@ -1,6 +1,8 @@
 use crate::utils::{Axis, Cmp, submat, sum, which};
 use faer::Mat;
 use rand::prelude::*;
+use serde::{Deserialize, Serialize};
+use crate::serialization::option_mat_serde;
 
 /// Hard subspace clustering model based on the Subspace K-Means variant.
 ///
@@ -18,11 +20,14 @@ use rand::prelude::*;
 /// - `members`: Hard cluster assignments for the training points. If present,
 ///   `members[i]` is the cluster index assigned to input point `i`, so each value belongs to `{0, ..., c - 1}`.
 /// - `progress`: Objective-function value at each training iteration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubspaceKMeans {
     c: usize,
     alpha: f64,
     epsilon: f64,
+    #[serde(with = "option_mat_serde")]
     weights: Option<Mat<f64>>,
+    #[serde(with = "option_mat_serde")]
     centers: Option<Mat<f64>>,
     members: Option<Vec<usize>>,
     progress: Vec<f64>,
@@ -415,8 +420,8 @@ impl SubspaceKMeans {
     /// # Notes
     ///
     /// For real-world datasets, it is usually advisable to standardize the input
-    /// features before fitting the model. A preprocessing module is provided in the library that 
-    /// enables feature scaling without resorting to a separate dependency. 
+    /// features before fitting the model. A preprocessing module is provided in the library that
+    /// enables feature scaling without resorting to a separate dependency.
     pub fn fit(c: usize, alpha: f64, epsilon: f64, x: &Mat<f64>, n_iter: usize) -> Self {
         let mut model = SubspaceKMeans::new(c, alpha, epsilon);
         model.init(x);
