@@ -1,5 +1,47 @@
 use faer::Mat;
 
+/// The function will drop columns that have zero variance.
+/// 
+/// # Arguments
+/// - `mat`: a reference to a feature matrix
+/// 
+/// # Returns
+/// - A reconstructed matrix without the zero variance columns
+pub fn drop_zero_variance_columns(mat: &Mat<f64>) -> Mat<f64> {
+    let nrows = mat.nrows();
+    let ncols = mat.ncols();
+    
+    let mut valid_columns = Vec::with_capacity(ncols);
+
+    // Check each column to see if it fluctuates
+    for j in 0..ncols {
+        let mut is_constant = true;
+        
+        let first_val = mat[(0, j)];
+        
+        for i in 1..nrows {
+            // Using a small epsilon to account for floating-point inaccuracies
+            if (mat[(i, j)] - first_val).abs() > 1e-9 {
+                is_constant = false;
+                break;
+            }
+        }
+        
+        if !is_constant {
+            valid_columns.push(j);
+        }
+    }
+
+    let new_ncols = valid_columns.len();
+    println!("Dropped {} zero-variance columns.", ncols - new_ncols);
+    
+    // Reconstruct a new matrix using only the valid columns
+    Mat::from_fn(nrows, new_ncols, |i, j| mat[(i, valid_columns[j])])
+}
+
+
+
+
 /// Standardizes features by removing the mean and scaling to unit variance.
 ///
 /// Centering and scaling happen independently on each feature by computing

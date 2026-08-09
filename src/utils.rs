@@ -1,10 +1,38 @@
 use core::f64;
-use faer::{Mat, mat::Ref};
+use faer::Mat;
 
 use serde::{Serialize, de::DeserializeOwned};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::path::Path;
+use std::error::Error;
+
+/// Read a CSV file into a matrix. If a line contains an invalid entry (one that cannot be parsed into a floating point number)
+/// the line will be completely skipped. If the CSV file contains a header the function will still work and it will merely ignore the
+/// line.
+pub fn load_csv_to_mat(filename:&str) -> Result<Mat<f64>, Box<dyn Error>> {
+    let file = File::open(filename)?;
+    let reader = BufReader::new(file);
+    let mut rows:Vec<Vec<f64>> = Vec::new();
+    
+    for line in reader.lines() {
+        let row = line?;
+        let row:Vec<Result<f64, _>> = row.split(",").map(|s| s.trim().parse()).collect();
+        if row.iter().all(|el| el.is_ok()) {
+            let row:Vec<f64> = row.into_iter().map(|el| el.unwrap()).collect();
+            rows.push(row);
+        }
+    }
+
+    let nrows = rows.len();
+    let ncols = rows[0].len();
+
+    let mat = Mat::from_fn(nrows, ncols, |i, j|{
+        rows[i][j]
+    });
+
+    Ok(mat)
+}
 
 // Saves any serializable model or struct to a nicely formatted JSON file on disk.
 ///
