@@ -1,8 +1,8 @@
+use crate::serialization::option_mat_serde;
 use crate::utils::{Axis, Cmp, submat, sum, which};
 use faer::Mat;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::serialization::option_mat_serde;
 
 /// Hard subspace clustering model based on the Subspace K-Means variant.
 ///

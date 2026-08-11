@@ -64,7 +64,7 @@ pub mod option_mat_serde {
             let nrows = mat.nrows();
             let ncols = mat.ncols();
             let mut data = Vec::with_capacity(nrows * ncols);
-            
+
             for i in 0..nrows {
                 for j in 0..ncols {
                     data.push(mat[(i, j)]);
@@ -91,7 +91,7 @@ pub mod option_mat_serde {
                         "Matrix dimensions do not match flattened data length",
                     ));
                 }
-                
+
                 Ok(Some(Mat::from_fn(proxy.nrows, proxy.ncols, |i, j| {
                     proxy.data[i * proxy.ncols + j]
                 })))

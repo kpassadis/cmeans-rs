@@ -1,37 +1,50 @@
 use core::f64;
 use faer::Mat;
+use std::print;
 
 use serde::{Serialize, de::DeserializeOwned};
+use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::path::Path;
-use std::error::Error;
 
 /// Read a CSV file into a matrix. If a line contains an invalid entry (one that cannot be parsed into a floating point number)
 /// the line will be completely skipped. If the CSV file contains a header the function will still work and it will merely ignore the
 /// line.
-pub fn load_csv_to_mat(filename:&str) -> Result<Mat<f64>, Box<dyn Error>> {
+pub fn load_csv_to_mat(
+    filename: &str,
+    skip_col: Option<usize>,
+) -> Result<Mat<f64>, Box<dyn Error>> {
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
-    let mut rows:Vec<Vec<f64>> = Vec::new();
-    
+    let mut rows: Vec<Vec<f64>> = Vec::new();
+
     for line in reader.lines() {
         let row = line?;
-        let row:Vec<Result<f64, _>> = row.split(",").map(|s| s.trim().parse()).collect();
+        let row: Vec<Result<f64, _>> = row
+            .split(",")
+            .enumerate()
+            .filter(|(i, _)| match skip_col {
+                Some(skip) => *i != skip,
+                None => true,
+            })
+            .map(|(_, s)| s.trim().parse())
+            .collect();
         if row.iter().all(|el| el.is_ok()) {
-            let row:Vec<f64> = row.into_iter().map(|el| el.unwrap()).collect();
+            let row: Vec<f64> = row.into_iter().map(|el| el.unwrap()).collect();
             rows.push(row);
         }
     }
 
     let nrows = rows.len();
-    let ncols = rows[0].len();
 
-    let mat = Mat::from_fn(nrows, ncols, |i, j|{
-        rows[i][j]
-    });
-
-    Ok(mat)
+    if nrows == 0 {
+        Err("No valid numeric rows found, check file validity".into())
+    } else {
+        let ncols = rows[0].len();
+        let mat = Mat::from_fn(nrows, ncols, |i, j| rows[i][j]);
+        Ok(mat)
+    }
 }
 
 // Saves any serializable model or struct to a nicely formatted JSON file on disk.
@@ -312,8 +325,8 @@ mod tests {
 
     use crate::utils::submat;
 
-    use super::{Axis, Cmp, distance_matrix, sum, which};
-    use faer::mat;
+    use super::{Axis, Cmp, distance_matrix, load_csv_to_mat, sum, which};
+    use faer::{Mat, mat};
 
     #[test]
     fn test_distance_matrix() {
@@ -390,5 +403,14 @@ mod tests {
 
         let x2 = submat(&x, &[1, 2], Axis::Horizontal);
         assert_eq!(x2.shape().0, 2);
+    }
+
+    #[test]
+    fn test_load_csv_file_to_matrix() {
+        let raw_data: Result<Mat<f64>, _> =
+            load_csv_to_mat("/home/kpassadis/datasets/genes/data.csv", Some(0));
+        assert!(raw_data.is_ok());
+        let raw_data = raw_data.unwrap();
+        println!("Row data len: {}", raw_data.ncols());
     }
 }
