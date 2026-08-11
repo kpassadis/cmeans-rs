@@ -73,7 +73,47 @@ fn main() {
 }
 
 ```
+<u> Gene dataset </u>
 
+Gene Expression Cancer RNA-Seq dataset on the UCI Machine Learning Repository is a random extraction from the larger PANCAN dataset. It contains gene expression data for 801 samples and 20,531 genes, categorized into five distinct tumor types.
+
+```rust
+
+use std::time::Instant;
+use cmeans::preprocessing::{MinMaxScaler, StandardScaler, drop_zero_variance_columns, log2_transform};
+use cmeans::utils::load_csv_to_mat;
+use cmeans::subspace::SubspaceKMeans;
+use faer::Mat;
+
+//Drop the first column, it is non numeric
+let raw_data: Mat<f64> = load_csv_to_mat("data.csv", Some(0))?;
+
+let clean_data: Mat<f64> = drop_zero_variance_columns(&raw_data);
+let log_data: Mat<f64> = log2_transform(&clean_data);
+
+println!("Applying Min-Max scaling...");
+let scaler: MinMaxScaler = MinMaxScaler::fit(&log_data); 
+let x_scaled: Mat<f64> = scaler.transform(&log_data);
+
+let clusters:usize = 5;
+let beta:f64 = 5.1; 
+let tolerance:f64 = 1e-10;
+let max_iters:usize = 200;
+
+println!("Starting Subspace K-Means...");
+let start_time:Instant = Instant::now();
+let model: SubspaceKMeans = SubspaceKMeans::fit(clusters, beta, tolerance, &x_scaled, max_iters);
+let duration:std::time::Duration = start_time.elapsed(); 
+println!("✅ Training completed in: {:?}", duration);
+println!("{:?}", model.get_members());
+
+```
+
+
+## Hyperparameter Tuning & Tips
+
+- **Subspace Exponent (`beta`)**: The `beta` parameter controls the strength of feature weighting. Recommended ranges for high-dimensional genomic/expression data fall between **3.3 and 5.3**. Higher values enforce stricter feature selection, while lower values behave closer to standard weighted K-Means.
+- **Random Seeding**: Because Subspace K-Means optimization can occasionally land in local minima depending on initial centroid placement, running multiple initializations or testing slight variations in `beta` is recommended for optimal convergence.
 
 🚀 What's New in v0.2.0
 
@@ -84,3 +124,9 @@ fn main() {
 
 - Enhance preprocessing module with MinMax scaler and a function to drop zero variance columns from a matrix.
 - Provide a utility function to read a CSV file into a faer matrix.
+
+## Roadmap & Future Development
+
+- [ ] **Multi-Start Initializations (`n_init`)**: Implement multiple random restarts to systematically bypass suboptimal local minima, automatically selecting and returning the model instance that minimizes the objective function $P(U, Z, W)$.
+- [ ] **Unsupervised Internal Validation Metrics**: Add native support for label-free clustering evaluation metrics tailored for subspace structures (e.g., Weighted Silhouette Coefficient, Calinski-Harabasz Index, Davies-Bouldin Index).
+- [ ] **Feature Weight Entropy & Sparsity Diagnostics**: Implement entropy tracking for the weight vector $W$ to detect and prevent uniform dimension weight collapse or noise hyper-concentration.

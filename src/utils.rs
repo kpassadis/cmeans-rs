@@ -1,6 +1,5 @@
 use core::f64;
 use faer::Mat;
-use std::print;
 
 use serde::{Serialize, de::DeserializeOwned};
 use std::error::Error;
