@@ -47,6 +47,8 @@ And the equation to update the cluster centers is given by:
 
 ## Example Usage
 
+<u> Breast cancer dataset </u>
+
 ```rust
 use cmeans::preprocessing::StandardScaler;
 use cmeans::subspace::SubspaceKMeans;
@@ -72,7 +74,13 @@ fn main() {
 
 ```
 
+
 🚀 What's New in v0.2.0
 
 - Disk I/O & Serialization: Full serde support for seamlessly saving and loading trained models to and from disk.
 - Cluster Variance Metrics: Calculate cluster variance and standard deviations.
+
+🚀 What's New in v0.3.0
+
+- Enhance preprocessing module with MinMax scaler and a function to drop zero variance columns from a matrix.
+- Provide a utility function to read a CSV file into a faer matrix.

@@ -40,6 +40,101 @@ pub fn drop_zero_variance_columns(mat: &Mat<f64>) -> Mat<f64> {
 }
 
 
+/// Takes log2 transformation on the elements of the input matrix
+/// 
+pub fn log2_transform(mat: &Mat<f64>) -> Mat<f64> {
+    let (nrows, ncols) = mat.shape();
+    
+    Mat::from_fn(nrows, ncols, |i, j| {
+        // We add 1.0 to prevent taking log2(0), which is negative infinity
+        (mat[(i, j)] + 1.0).log2()
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct MinMaxScaler {
+    x_min: Vec<f64>,
+    x_max: Vec<f64>,
+}
+
+impl MinMaxScaler {
+    /// Fits the scaler to the data by learning the minimum and maximum of each feature.
+    ///
+    /// # Arguments
+    /// - `x`: Input data matrix of shape `[n x p]`.
+    pub fn fit(x: &Mat<f64>) -> Self {
+        let (nrows, ncols) = x.shape();
+        let mut x_min = vec![f64::MAX; ncols];
+        let mut x_max = vec![f64::MIN; ncols];
+
+        // Iterate through the matrix to find the min and max for each column
+        for j in 0..ncols {
+            for i in 0..nrows {
+                let val = x[(i, j)];
+                if val < x_min[j] {
+                    x_min[j] = val;
+                }
+                if val > x_max[j] {
+                    x_max[j] = val;
+                }
+            }
+        }
+
+        Self { x_min, x_max }
+    }
+
+    /// Transforms the data using the learned min and max.
+    ///
+    /// # Arguments
+    /// - `x`: Input data matrix of shape `[n x p]`.
+    pub fn transform(&self, x: &Mat<f64>) -> Mat<f64> {
+        let (nrows, ncols) = x.shape();
+
+        Mat::from_fn(nrows, ncols, |i, j| {
+            let range = self.x_max[j] - self.x_min[j];
+            
+            // 🚨 Crucial: Prevent division by zero for zero-variance features!
+            if range == 0.0 {
+                0.0 // If min == max, all values are identical. Map them to 0.0.
+            } else {
+                (x[(i, j)] - self.x_min[j]) / range
+            }
+        })
+    }
+
+    /// Fits the scaler to the data and then transforms it in a single step.
+    ///
+    /// # Arguments
+    /// - `x`: Input data matrix of shape `[n x p]`.
+    pub fn fit_transform(x: &Mat<f64>) -> (Self, Mat<f64>) {
+        let scaler = Self::fit(x);
+        let transformed = scaler.transform(x);
+        (scaler, transformed)
+    }
+
+    /// Scales the data back to its original representation.
+    ///
+    /// # Arguments
+    /// - `x_scaled`: A previously scaled data matrix.
+    pub fn inverse_transform(&self, x_scaled: &Mat<f64>) -> Mat<f64> {
+        let (nrows, ncols) = x_scaled.shape();
+
+        Mat::from_fn(nrows, ncols, |i, j| {
+            let range = self.x_max[j] - self.x_min[j];
+            x_scaled[(i, j)] * range + self.x_min[j]
+        })
+    }
+
+    /// Returns the learned minimum of each feature.
+    pub fn min(&self) -> &[f64] {
+        &self.x_min
+    }
+
+    /// Returns the learned maximum of each feature.
+    pub fn max(&self) -> &[f64] {
+        &self.x_max
+    }
+}
 
 
 /// Standardizes features by removing the mean and scaling to unit variance.
