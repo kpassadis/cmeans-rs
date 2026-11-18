@@ -7,11 +7,11 @@ use std::{
 };
 
 pub mod metrics;
+pub mod pcm;
 pub mod preprocessing;
 pub mod serialization;
 pub mod subspace;
 pub mod utils;
-pub mod pcm;
 
 use crate::metrics::ClusterMetrics;
 use crate::serialization::mat_serde;
@@ -77,24 +77,7 @@ impl Cluster {
     /// # Returns
     /// A column matrix of shape `[n x 1]` containing the distances.
     fn distances(&self, x: &Mat<f64>, g: &Mat<f64>) -> Mat<f64> {
-        assert_eq!(self.v.nrows(), 1);
-        assert_eq!(g.nrows(), 1);
-        assert_eq!(g.ncols(), self.v.ncols());
-
-        let p = self.v.ncols();
-        let n = x.nrows();
-        let mut d = Mat::<f64>::zeros(1, p);
-        //The column matrix to return
-        let mut dist_mat = Mat::<f64>::zeros(n, 1);
-        x.row_iter().enumerate().for_each(|(i, x)| {
-            let x = x.as_mat();
-            zip!(&mut d, &self.v, g, &x)
-                .for_each(|unzip!(d, v, g, x)| *d = (*x - *v) * *g * (*x - *v));
-            let dsum = d.sum();
-            dist_mat[(i, 0)] = dsum;
-        });
-
-        dist_mat
+        metrics::weighted_sq_distances(self.v.row(0), x.as_ref(), g.row(0))
     }
 
     /// Computes the cluster's contribution to the total objective function.

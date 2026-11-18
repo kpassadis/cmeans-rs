@@ -6,7 +6,7 @@ use std::{
     thread::{self, ScopedJoinHandle},
 };
 
-use crate::metrics::ClusterMetrics;
+use crate::metrics::{self, ClusterMetrics};
 use crate::serialization::mat_serde;
 
 /// Represents a single possibilistic cluster within the Possibilistic C-Means model.
@@ -21,13 +21,13 @@ struct Cluster {
     v: Mat<f64>,
     /// The typicality column-vector. Dimensions `[n x 1]`, where `n` is the number of data points.
     /// Each value represents the degree of compatibility of the corresponding point to this cluster.
-    /// Typicality differs from membership in that it is an unnormalized score indicating the possibility 
+    /// Typicality differs from membership in that it is an unnormalized score indicating the possibility
     /// of the point belonging to this particular cluster, independently of all other clusters.
     #[serde(with = "mat_serde")]
     t: Mat<f64>,
     /// The fuzzifier hyperparameter `m`. Controls the "fuzziness" of the cluster assignments.
     m: f64,
-    gamma:f64
+    gamma: f64,
 }
 
 impl Cluster {
@@ -40,34 +40,48 @@ impl Cluster {
     /// - `n`: Number of samples in the input data.
     /// - `c`: Total number of clusters in the model.
     fn new(p: usize, m: f64, row: &RowRef<f64>, n: usize, c: usize) -> Self {
-        let mut v: Mat<f64> = Mat::<f64>::zeros(1, p);
-        let mut t: Mat<f64> = Mat::<f64>::zeros(n, 1);
-        for i in 0..n {
-            t[(i, 0)] = 1.0 / (c as f64);
+        assert!(
+            m > 0.0,
+            "the value of m specified should be larger than zero"
+        );
+        let v = Mat::from_fn(n, 1, |_, _| 1.0 / (c as f64));
+        let t = Mat::from_fn(1, p, |_, j| row[j]);
+        Self {
+            v,
+            t,
+            m,
+            gamma: 0.0,
         }
-        for i in 0..p {
-            v[(0, i)] = row[i];
-        }
-        Self { v, t, m, gamma:0.0 }
+    }
+
+    fn distances(&self, x: &Mat<f64>) -> Mat<f64> {
+        metrics::sq_euclidean_distances(self.v.row(0), x.as_ref())
     }
 
     /// The contribution of the cluster to the total objective. The distances matrix
-    /// constains the distance of each point in the dataset from the center of the 
+    /// constains the distance of each point in the dataset from the center of the
     /// particular cluster.
     /// # Arguments
-    /// - `distances`: A reference to a distance matrix of shape [n x 1]. 
-    /// 
-    fn objective(&self, distances:&Mat<f64>) -> f64 {
+    /// - `distances`: A reference to a distance matrix of shape [n x 1].
+    /// Note that distances refers to a squared distance.
+    fn term1(&self, distances: &Mat<f64>) -> f64 {
         assert_eq!(self.t.shape(), distances.shape());
         let mut obj = 0.0;
         zip!(&self.t, distances).for_each(|unzip!(t, d)| {
             obj += t.powf(self.m) * d;
         });
-        
+
         obj
     }
 
-    fn penalty(&self) -> f64 {
-        todo!()
+    /// The objective function in the PCM has two terms. The second term
+    /// is similar to a penalty term that prevents the first term from setting
+    /// the t for each pattern and cluster to zero.
+    fn term2(&self) -> f64 {
+        let penalty = self
+            .t
+            .row_iter()
+            .fold(0.0, |acc, row| acc + (1.0 - row[0]).powf(self.m));
+        self.gamma * penalty
     }
 }
