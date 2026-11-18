@@ -11,6 +11,7 @@ pub mod preprocessing;
 pub mod serialization;
 pub mod subspace;
 pub mod utils;
+pub mod pcm;
 
 use crate::metrics::ClusterMetrics;
 use crate::serialization::mat_serde;
