@@ -29,7 +29,7 @@ struct Cluster {
     /// The membership column-vector. Dimensions `[n x 1]`, where `n` is the number of data points.
     /// Each value represents the degree of membership of the corresponding point to this cluster.
     #[serde(with = "mat_serde")]
-    mu: Mat<f64>,
+    pub(crate) mu: Mat<f64>,
     /// The fuzzifier hyperparameter `m`. Controls the "fuzziness" of the cluster assignments.
     m: f64,
 }
@@ -134,7 +134,7 @@ impl Cluster {
 
 #[derive(Serialize, Deserialize)]
 pub struct FuzzyMeans {
-    clusters: Vec<Cluster>,
+    pub(crate) clusters: Vec<Cluster>,
     #[serde(with = "mat_serde")]
     g: Mat<f64>,
     history: Vec<f64>,
