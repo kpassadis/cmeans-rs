@@ -84,4 +84,29 @@ impl Cluster {
             .fold(0.0, |acc, row| acc + (1.0 - row[0]).powf(self.m));
         self.gamma * penalty
     }
+
+    /// Updates the typicality column-vector `t` for this cluster given the input data `x`.
+    ///
+    /// Computes the squared Euclidean distance from every sample in `x` to the cluster center `v`
+    /// and updates each sample's typicality according to the Possibilistic C-Means stationarity
+    /// condition:
+    ///
+    /// $$t_{ij} = \frac{1}{1 + \left( \frac{d_{ij}^2}{\gamma_i} \right)^{\frac{1}{m - 1}}}$$
+    ///
+    /// # Arguments
+    /// - `x`: Input data matrix of dimensions `[n x p]`, where `n` is the number of samples
+    ///   and `p` is the dimensionality of the feature space.
+    fn update_tau(&mut self, x: &Mat<f64>) {
+        let dist_sq = metrics::sq_euclidean_distances(self.v.row(0), x.as_ref());
+        let p = 1.0 / (self.m - 1.0);
+        let gamma = self.gamma.max(f64::EPSILON);
+
+        zip!(&mut self.t, &dist_sq).for_each(|unzip!(t, d)| {
+            *t = if *d == 0.0 {
+                1.0
+            } else {
+                1.0 / (1.0 + (d / gamma).powf(p))
+            };
+        });
+    }
 }
