@@ -109,4 +109,10 @@ impl Cluster {
             };
         });
     }
+
+    fn update_v(&mut self, x: &Mat<f64>) {
+        
+    }
+
+
 }
